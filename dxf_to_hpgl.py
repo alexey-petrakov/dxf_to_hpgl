@@ -1,4 +1,9 @@
 #!/usr/bin/python
+# -*- coding: utf-8 -*-
+
+from PyQt4.QtCore import *
+from PyQt4.QtGui import *
+from Ui_mainWindow import Ui_MainWindow
 
 import argparse
 import dxf_reader
@@ -83,58 +88,91 @@ def getEntity(ent_list, w):
     return ent_list[i_min], ent_list[:i_min]+ent_list[i_min+1:]
 
 
+
+class MainWindow(QMainWindow, Ui_MainWindow):
+    def __init__(self):
+        QMainWindow.__init__(self)
+        self.setupUi(self)
+
+        self.convert_pushButton.clicked.connect(self.convert)
+        self.source_browse_toolButton.clicked.connect(self.browseSource)
+        self.target_browse_toolButton.clicked.connect(self.browseTarget)
+        self.source_lineEdit.editingFinished.connect(self.checkConvert)
+        self.target_lineEdit.editingFinished.connect(self.checkConvert)
+
+
+    def checkConvert(self):
+        enabled = True
+        if self.source_lineEdit.text().isEmpty() or self.target_lineEdit.text().isEmpty():
+            enabled = False
+        self.convert_pushButton.setEnabled(enabled)
+
+
+    def browseSource(self):
+        file_name = QFileDialog.getOpenFileName(self, "Select DXF", "", "DXF files(*.dxf)")
+        if not file_name.isEmpty():
+            file_name = unicode(file_name)
+            self.source_lineEdit.setText(file_name)
+            if self.target_lineEdit.text().isEmpty():
+                dxf_root, dxf_ext = os.path.splitext(file_name)
+                self.target_lineEdit.setText(dxf_root + ".plt")
+        self.checkConvert()
+
+
+    def browseTarget(self):
+        file_name = QFileDialog.getSaveFileName(self, "Save to", "", "HPGL files(*.plt *.hpgl)")
+        if not file_name.isEmpty():
+            file_name = unicode(file_name)
+            plt_root, plt_ext = os.path.splitext(file_name)
+            if len(plt_ext) == 0:
+                file_name = plt_root + ".plt"
+            self.target_lineEdit.setText(file_name)
+        self.checkConvert()
+
+
+
+    def convert(self):
+        dxf_name = unicode(self.source_lineEdit.text())
+        hpgl_name = unicode(self.target_lineEdit.text())
+
+        tol = self.tol_SpinBox.value()
+
+        reader = dxf_reader.DXFReader(dxf_name)
+        writer = HPGLWriter(hpgl_name)
+        writer.init()
+
+        entities = list(reader.section("ENTITIES"))
+
+        while entities:
+            e, entities = getEntity(entities, writer)
+            #~ print ".",
+            if isinstance(e, dxf_reader.DXFLine):
+                p1 = (e.x(), e.y())
+                p2 = (e.x2(), e.y2())
+                cur_pos = (writer.curPos()[0]/40, writer.curPos()[1]/40)
+                if dist(cur_pos, p1) > dist(cur_pos, p2):
+                    p1, p2 = p2, p1
+                writer.move(*p1)
+                writer.lineTo(*p2)
+            elif isinstance(e, dxf_reader.DXFCircle):
+                r = float(e.radius())
+                if tol < r:
+                    N = int(round(math.pi / math.acos(1.0 - tol/r)))
+                else:
+                    N = 3
+                da = 2*math.pi / N
+                writer.move(e.x(), e.y()+r)
+                for i in xrange(1, N+1):
+                    x = r * math.sin(i*da) + e.x()
+                    y = r * math.cos(i*da) + e.y()
+                    writer.lineTo(x, y)
+        writer.penUp()
+        del writer
+        self.statusBar().showMessage(u"Преобразование завершено.", 5000)
+
+
 if __name__ == "__main__":
-    arg_parser = argparse.ArgumentParser(description="DXF to HPGL converter.")
-    arg_parser.add_argument("dxf_name")
-    arg_parser.add_argument("hpgl_name", default=None, nargs="?")
-    arg_parser.add_argument("--tol", default=0.1, type=float)
-    args = arg_parser.parse_args()
-
-    dxf_name = args.dxf_name
-    hpgl_name = args.hpgl_name
-
-    if hpgl_name is not None:
-        hpgl_root, hpgl_ext = os.path.splitext(hpgl_name)
-        if len(hpgl_ext.strip()) == 0:
-            print "Adding \".plt\" extension to {}.".format(hpgl_root)
-            hpgl_name = "{}{}".format(hpgl_root, ".plt")
-    else:
-        dxf_root, dxf_ext = os.path.splitext(dxf_name)
-        hpgl_name = "{}{}".format(dxf_root, ".plt")
-
-    print "Converting \"{}\" to \"{}\".".format(dxf_name, hpgl_name)
-
-    reader = dxf_reader.DXFReader(dxf_name)
-    writer = HPGLWriter(hpgl_name)
-    writer.init()
-
-    entities = list(reader.section("ENTITIES"))
-
-    while entities:
-        e, entities = getEntity(entities, writer)
-        print ".",
-        if isinstance(e, dxf_reader.DXFLine):
-            p1 = (e.x(), e.y())
-            p2 = (e.x2(), e.y2())
-            cur_pos = (writer.curPos()[0]/40, writer.curPos()[1]/40)
-            if dist(cur_pos, p1) > dist(cur_pos, p2):
-                p1, p2 = p2, p1
-            writer.move(*p1)
-            writer.lineTo(*p2)
-        elif isinstance(e, dxf_reader.DXFCircle):
-            r = float(e.radius())
-            if args.tol < r:
-                N = int(round(math.pi / math.acos(1.0 - args.tol/r)))
-            else:
-                N = 3
-            da = 2*math.pi / N
-            writer.move(e.x(), e.y()+r)
-            for i in xrange(1, N+1):
-                x = r * math.sin(i*da) + e.x()
-                y = r * math.cos(i*da) + e.y()
-                writer.lineTo(x, y)
-
-    writer.penUp()
-
-    print ""
-    print "Done!"
+    app = QApplication(sys.argv)
+    mainWindow = MainWindow()
+    mainWindow.show()
+    sys.exit(app.exec_())
