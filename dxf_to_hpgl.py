@@ -141,7 +141,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         writer = HPGLWriter(hpgl_name)
         writer.init()
 
-        entities = list(reader.section("ENTITIES"))
+        entities = list(reader.entities())
 
         while entities:
             e, entities = getEntity(entities, writer)

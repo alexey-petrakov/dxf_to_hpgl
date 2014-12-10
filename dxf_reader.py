@@ -1,4 +1,5 @@
 #!/usr/bin/python
+# -*- coding: utf-8 -*-
 
 CODE_ENTITY_TYPE = 0
 CODE_LAYER_NAME = 8
@@ -11,6 +12,11 @@ CODE_Y = 20
 CODE_X2 = 11
 CODE_Y2 = 21
 CODE_RADIUS = 40
+
+
+
+class DXFError(Exception): pass
+
 
 
 class DXFEntity(object):
@@ -63,6 +69,7 @@ class DXFCircle(DXFEntity):
         return u"Circle({}, {} - {})".format(self.x(), self.y(), self.radius())
 
 
+
 ENTITY_CLASSES = {"LINE": DXFLine, "CIRCLE": DXFCircle}
 
 def createEntity(pairs):
@@ -91,33 +98,42 @@ class DXFReader(object):
 
     def section(self, sec_name):
         cur_sec = None
-        cur_entity = None
         pairs_iter = self.iterPairs()
-        while True:
-            code, value = pairs_iter.next()
+        for code, value in pairs_iter:
             if code == 0 and value == "SECTION":
                 code, value = pairs_iter.next()
                 assert code == 2
                 if value == sec_name:
                     cur_sec = []
                     break
-        while True:
-            code, value = pairs_iter.next()
+        else:
+            raise DXFError("No such section \"{}\"!".format(sec_name))
+
+        for code, value in pairs_iter:
+            if code == 0 and value == "ENDSEC":
+                break
+            else:
+                cur_sec.append((code, value))
+        return cur_sec
+
+
+    def entities(self):
+        cur_entity = None
+        ent = []
+        for code, value in self.section("ENTITIES"):
             if code == 0:
                 if cur_entity is not None:
-                    cur_sec.append(createEntity(cur_entity))
+                    ent.append(createEntity(cur_entity))
                 cur_entity = {}
-            if not (code == 0 and value == "ENDSEC"):
-                cur_entity[code] = value
-            else:
-                return cur_sec
+            cur_entity[code] = value
+        ent.append(createEntity(cur_entity))
+        return ent
+
 
 
 if __name__ == "__main__":
-    r = DXFReader("/home/lex/Development/EE/robo_perfboard_stripped.dxf")
-    #r = DXFReader("/tmp/test.dxf")
+    r = DXFReader(u"/home/lex/Development/dxf_to_hpgl/Data/1/Звезда.DXF")
 
-    entities = r.section("ENTITIES")
-
+    entities = r.entities()
     for e in entities:
         print e.entityType(), unicode(e)
